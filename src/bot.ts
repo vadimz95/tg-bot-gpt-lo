@@ -1,76 +1,64 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './config';
 import { setupGlobalErrorHandler } from './utils/globalErrorHandler';
-import { enqueueExcelWrite } from './storage/excelQueue';
-import { savePhotosToFolder } from './storage/photos';
-import { saveInfo } from './storage/info';
-import { formatDate, sanitizeFolderName } from './utils/format';
+import { saveUser, savePhoto } from './storage/savePhoto';
 import { collectMedia } from './utils/mediaGroup';
+import { savePhotosToFolder } from './storage/photos';
 import { safeDeleteMessages } from './utils/deleteMessages';
+import { formatDate, sanitizeFolderName } from './utils/format';
+import { waitForDb } from './db';
 
-const bot = new TelegramBot(config.telegramToken, { polling: true });
 
-// Налаштовуємо глобальний лог
-setupGlobalErrorHandler(bot);
+// Глобальний лог
 
-// Розбір фото
-bot.on('photo', (msg) => {
-  collectMedia(msg, async (messages) => {
+(async () => {
     try {
-      const caption = messages[0].caption ?? 'Без назви';
-      const dateStr = formatDate();
-      const safeTitle = sanitizeFolderName(caption);
+        await waitForDb();
+        const bot = new TelegramBot(config.telegramToken, { polling: true });
+        setupGlobalErrorHandler(bot);
 
-      const folderName = `${safeTitle}_${dateStr}`;
-      const targetDir = `${config.dataDir}/${folderName}`;
+        bot.on('photo', (msg) => {
+            collectMedia(msg, async (messages) => {
+                try{
+                const user = msg.from!;
+                await saveUser(user.id, user.username, user.first_name, user.last_name);
 
-      const fileUrls: string[] = [];
+                const caption = messages[0].caption ?? 'Без назви';
+                const dateStr = formatDate();
+                const safeTitle = sanitizeFolderName(caption);
+                const folderName = `${safeTitle}_${dateStr}`;
+                const targetDir = `${config.dataDir}/${folderName}`;
 
-      for (const m of messages) {
-        const photo = m.photo![m.photo!.length - 1];
-        const file = await bot.getFile(photo.file_id);
-        fileUrls.push(
-          `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`
-        );
-      }
+                const filePaths: string[] = [];
+                for (const m of messages) {
+                    const photo = m.photo![m.photo!.length - 1];
+                    const file = await bot.getFile(photo.file_id);
+                    const paths = await savePhotosToFolder(
+                    [`https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`],
+                    targetDir
+                    );
+                    filePaths.push(...paths);
 
-      const photoPaths = await savePhotosToFolder(fileUrls, targetDir);
+                    // Зберігаємо фото в БД
+                    await savePhoto(user.id, caption, paths[0], msg.media_group_id);
+                }
 
-      saveInfo(targetDir, {
-        caption,
-        date: dateStr,
-        photos: photoPaths,
-        mediaGroupId: msg.media_group_id ?? null,
-      });
+                const messageIds = messages.map((m) => m.message_id);
+                await safeDeleteMessages(bot, msg.chat.id, messageIds);
 
-      // Запис в Excel через чергу
-      await enqueueExcelWrite({
-        date: dateStr,
-        user:
-          msg.from?.username ??
-          `${msg.from?.first_name ?? ''} ${msg.from?.last_name ?? ''}`.trim() ??
-          String(msg.from?.id),
-        caption,
-      });
-
-      // Видаляємо повідомлення користувача
-      const messageIds = messages.map((m) => m.message_id);
-      await safeDeleteMessages(bot, msg.chat.id, messageIds);
-
-      // Підтвердження з авто-видалення
-      const confirmation = await bot.sendMessage(
-        msg.chat.id,
-        `✅ Збережено ${photoPaths.length} фото`
-      );
-      setTimeout(() => {
-        bot.deleteMessage(msg.chat.id, confirmation.message_id).catch(() => {});
-      }, 5000);
+                const confirmation = await bot.sendMessage(msg.chat.id, `✅ Збережено ${filePaths.length} фото`);
+                setTimeout(() => {
+                    bot.deleteMessage(msg.chat.id, confirmation.message_id).catch(() => {});
+                }, 5000);
+                } catch (err) {
+                import('./utils/errorHandler').then(({ logError }) =>
+                    logError(err, 'photo_handler')
+                );
+                bot.sendMessage(msg.chat.id, '❌ Помилка при збереженні фото');
+                }
+            });
+        });
     } catch (err) {
-      // Глобальний лог вже налаштований, але тут додатково можна контекст
-      import('./utils/errorHandler').then(({ logError }) =>
-        logError(err, 'photo_handler')
-      );
-      bot.sendMessage(msg.chat.id, '❌ Помилка при збереженні фото');
+        console.error('❌ Bot failed to start:', err);
     }
-  });
-});
+})();

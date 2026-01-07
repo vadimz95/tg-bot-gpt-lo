@@ -14,7 +14,7 @@ export function logError(error: unknown, context?: string) {
     .replace(/:/g, '-') // Windows safe
     .replace(/\..+/, ''); // видаляємо мілісекунди
 
-  const fileName = `${context}|${timestamp}.txt`;
+  const fileName = `${context}-${timestamp}.txt`;
   const filePath = path.join(errorsDir, fileName);
 
   const content = [
