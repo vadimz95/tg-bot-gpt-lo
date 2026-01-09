@@ -1,5 +1,7 @@
-# ---------- BUILD STAGE ----------
-FROM node:20-alpine AS builder
+FROM node:20-alpine
+
+# PostgreSQL client
+RUN apk add --no-cache postgresql-client
 
 WORKDIR /app
 
@@ -8,22 +10,11 @@ RUN npm install
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY migrations ./migrations
+COPY entrypoint.sh ./entrypoint.sh
 
 RUN npm run build
 
+RUN chmod +x /app/entrypoint.sh
 
-# ---------- RUNTIME STAGE ----------
-FROM node:20-alpine
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-
-# папка для Excel + фото
-RUN mkdir -p /app/data
-
-CMD ["node", "dist/bot.js"]
+CMD ["/app/entrypoint.sh"]

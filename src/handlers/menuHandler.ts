@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { setUserState } from '../state/userState';
-import { cancelKeyboard, mainMenu } from './menu';
+import { mainMenu } from './menu';
 
 export function setupMenuHandlers(bot: TelegramBot) {
   bot.on('message', (msg) => {
