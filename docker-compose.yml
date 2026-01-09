@@ -1,13 +1,45 @@
-version: "3.9"
-
 services:
-  telegram-bot:
+  postgres:
+    image: postgres:15
+    container_name: warehouse-postgres
+    environment:
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: botuser
+      POSTGRES_PASSWORD: botpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: warehouse-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+  bot:
     build: .
-    container_name: telegram-warehouse-bot
-    restart: unless-stopped
+    container_name: warehouse-bot
+    depends_on:
+      - postgres
     env_file:
       - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: botuser
+      DB_PASSWORD: botpassword
+      DB_NAME: warehouse
+      DATABASE_URL: postgres://botuser:botpassword@postgres:5432/warehouse
+      BOT_TOKEN: ${BOT_TOKEN}
     volumes:
       - ./data:/app/data
-    environment:
-    - TZ=Europe/Kyiv
+      - ./errors:/app/errors
+
+volumes:
+  pgdata:

@@ -9,9 +9,16 @@ import { collectMedia } from './utils/mediaGroup';
 import { safeDeleteMessages } from './utils/deleteMessages';
 
 const bot = new TelegramBot(config.telegramToken, { polling: true });
-
+console.log('🤖 Bot polling started');
 // Налаштовуємо глобальний лог
 setupGlobalErrorHandler(bot);
+
+bot.onText(/\/start/, async (msg) => {
+  await bot.sendMessage(
+    msg.chat.id,
+    '👋 Бот запущений.\nНадішли фото для збереження.'
+  );
+});
 
 // Розбір фото
 bot.on('photo', (msg) => {
